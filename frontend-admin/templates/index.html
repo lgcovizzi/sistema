@@ -1,0 +1,103 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Bem-vindo ao Sistema</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-users fa-3x text-primary mb-3"></i>
+                <h5 class="card-title">Usuários</h5>
+                <p class="card-text">Gerencie os usuários do sistema</p>
+                <a href="/users" class="btn btn-primary">Acessar</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-box fa-3x text-success mb-3"></i>
+                <h5 class="card-title">Produtos</h5>
+                <p class="card-text">Gerencie o catálogo de produtos</p>
+                <a href="/products" class="btn btn-success">Acessar</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-chart-bar fa-3x text-info mb-3"></i>
+                <h5 class="card-title">Dashboard</h5>
+                <p class="card-text">Visualize estatísticas e relatórios</p>
+                <a href="/dashboard" class="btn btn-info">Acessar</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-code fa-3x text-warning mb-3"></i>
+                <h5 class="card-title">GraphQL</h5>
+                <p class="card-text">Explore a API GraphQL</p>
+                <a href="/playground" target="_blank" class="btn btn-warning">Playground</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Sobre o Sistema</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Tecnologias Utilizadas:</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="fab fa-golang text-primary me-2"></i>Go (Golang)</li>
+                            <li><i class="fas fa-database text-success me-2"></i>PostgreSQL</li>
+                            <li><i class="fas fa-layer-group text-info me-2"></i>GORM</li>
+                            <li><i class="fas fa-project-diagram text-warning me-2"></i>GraphQL</li>
+                            <li><i class="fab fa-docker text-primary me-2"></i>Docker</li>
+                            <li><i class="fas fa-server text-secondary me-2"></i>Nginx</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Funcionalidades:</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-check text-success me-2"></i>CRUD de Usuários</li>
+                            <li><i class="fas fa-check text-success me-2"></i>CRUD de Produtos</li>
+                            <li><i class="fas fa-check text-success me-2"></i>API GraphQL</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Interface Web</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Containerização</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Proxy Reverso</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    // Adicionar classe active ao link atual
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('.nav-link');
+        
+        navLinks.forEach(link => {
+            if (link.getAttribute('href') === currentPath) {
+                link.classList.add('active');
+            }
+        });
+    });
+</script>
+{{end}}
