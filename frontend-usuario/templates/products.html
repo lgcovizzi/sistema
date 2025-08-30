@@ -1,0 +1,310 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Gerenciar Produtos</h1>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#productModal">
+        <i class="fas fa-plus me-2"></i>Novo Produto
+    </button>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Lista de Produtos</h5>
+            </div>
+            <div class="card-body">
+                <div id="productsTable">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Carregando...</span>
+                        </div>
+                        <p class="mt-2">Carregando produtos...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para criar/editar produto -->
+<div class="modal fade" id="productModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="productModalTitle">Novo Produto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="productForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="productName" class="form-label">Nome</label>
+                                <input type="text" class="form-control" id="productName" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="productPrice" class="form-label">Preço</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">R$</span>
+                                    <input type="number" class="form-control" id="productPrice" step="0.01" min="0" required>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="productStock" class="form-label">Estoque</label>
+                                <input type="number" class="form-control" id="productStock" min="0" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="productDescription" class="form-label">Descrição</label>
+                        <textarea class="form-control" id="productDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="saveProductBtn">Salvar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    let currentProductId = null;
+    
+    // Função para buscar dados via GraphQL
+    async function fetchGraphQL(query, variables = {}) {
+        try {
+            const response = await axios.post('/query', {
+                query: query,
+                variables: variables
+            });
+            return response.data;
+        } catch (error) {
+            console.error('Erro ao buscar dados:', error);
+            return null;
+        }
+    }
+    
+    // Carregar lista de produtos
+    async function loadProducts() {
+        const query = `
+            query {
+                products {
+                    id
+                    name
+                    description
+                    price
+                    stock
+                    createdAt
+                    updatedAt
+                }
+            }
+        `;
+        
+        const data = await fetchGraphQL(query);
+        
+        if (data && data.data && data.data.products) {
+            const products = data.data.products;
+            const tableHtml = `
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Nome</th>
+                                <th>Descrição</th>
+                                <th>Preço</th>
+                                <th>Estoque</th>
+                                <th>Criado em</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${products.map(product => `
+                                <tr>
+                                    <td><strong>${product.name}</strong></td>
+                                    <td>${product.description || '-'}</td>
+                                    <td>R$ ${parseFloat(product.price).toFixed(2)}</td>
+                                    <td>
+                                        <span class="badge ${product.stock > 10 ? 'bg-success' : product.stock > 0 ? 'bg-warning' : 'bg-danger'}">
+                                            ${product.stock} unidades
+                                        </span>
+                                    </td>
+                                    <td>${new Date(product.createdAt).toLocaleDateString('pt-BR')}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary me-2" onclick="editProduct('${product.id}', '${product.name}', '${product.description || ''}', ${product.price}, ${product.stock})">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" onclick="deleteProduct('${product.id}', '${product.name}')">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            document.getElementById('productsTable').innerHTML = products.length > 0 ? tableHtml : 
+                '<div class="text-center py-5 text-muted"><i class="fas fa-box fa-3x mb-3"></i><p>Nenhum produto encontrado</p></div>';
+        } else {
+            document.getElementById('productsTable').innerHTML = 
+                '<div class="text-center py-5 text-danger"><i class="fas fa-exclamation-triangle fa-3x mb-3"></i><p>Erro ao carregar produtos</p></div>';
+        }
+    }
+    
+    // Criar produto
+    async function createProduct(name, description, price, stock) {
+        const mutation = `
+            mutation CreateProduct($input: NewProduct!) {
+                createProduct(input: $input) {
+                    id
+                    name
+                    description
+                    price
+                    stock
+                }
+            }
+        `;
+        
+        const variables = {
+            input: { name, description, price, stock }
+        };
+        
+        const data = await fetchGraphQL(mutation, variables);
+        
+        if (data && data.data && data.data.createProduct) {
+            return true;
+        } else {
+            console.error('Erro ao criar produto:', data.errors);
+            return false;
+        }
+    }
+    
+    // Editar produto
+    async function updateProduct(id, name, description, price, stock) {
+        const mutation = `
+            mutation UpdateProduct($id: UUID!, $input: UpdateProduct!) {
+                updateProduct(id: $id, input: $input) {
+                    id
+                    name
+                    description
+                    price
+                    stock
+                }
+            }
+        `;
+        
+        const variables = {
+            id: id,
+            input: { name, description, price, stock }
+        };
+        
+        const data = await fetchGraphQL(mutation, variables);
+        
+        if (data && data.data && data.data.updateProduct) {
+            return true;
+        } else {
+            console.error('Erro ao atualizar produto:', data.errors);
+            return false;
+        }
+    }
+    
+    // Deletar produto
+    async function deleteProductById(id) {
+        const mutation = `
+            mutation DeleteProduct($id: UUID!) {
+                deleteProduct(id: $id)
+            }
+        `;
+        
+        const variables = { id };
+        
+        const data = await fetchGraphQL(mutation, variables);
+        
+        if (data && data.data && data.data.deleteProduct) {
+            return true;
+        } else {
+            console.error('Erro ao deletar produto:', data.errors);
+            return false;
+        }
+    }
+    
+    // Funções de interface
+    function editProduct(id, name, description, price, stock) {
+        currentProductId = id;
+        document.getElementById('productModalTitle').textContent = 'Editar Produto';
+        document.getElementById('productName').value = name;
+        document.getElementById('productDescription').value = description;
+        document.getElementById('productPrice').value = price;
+        document.getElementById('productStock').value = stock;
+        
+        const modal = new bootstrap.Modal(document.getElementById('productModal'));
+        modal.show();
+    }
+    
+    function deleteProduct(id, name) {
+        if (confirm(`Tem certeza que deseja deletar o produto "${name}"?`)) {
+            deleteProductById(id).then(success => {
+                if (success) {
+                    loadProducts();
+                } else {
+                    alert('Erro ao deletar produto');
+                }
+            });
+        }
+    }
+    
+    // Event listeners
+    document.addEventListener('DOMContentLoaded', function() {
+        loadProducts();
+        
+        // Reset modal quando fechar
+        document.getElementById('productModal').addEventListener('hidden.bs.modal', function() {
+            currentProductId = null;
+            document.getElementById('productForm').reset();
+            document.getElementById('productModalTitle').textContent = 'Novo Produto';
+        });
+        
+        // Salvar produto
+        document.getElementById('saveProductBtn').addEventListener('click', async function() {
+            const name = document.getElementById('productName').value;
+            const description = document.getElementById('productDescription').value;
+            const price = parseFloat(document.getElementById('productPrice').value);
+            const stock = parseInt(document.getElementById('productStock').value);
+            
+            if (!name || isNaN(price) || isNaN(stock)) {
+                alert('Preencha todos os campos obrigatórios corretamente');
+                return;
+            }
+            
+            let success = false;
+            
+            if (currentProductId) {
+                // Editar produto existente
+                success = await updateProduct(currentProductId, name, description, price, stock);
+            } else {
+                // Criar novo produto
+                success = await createProduct(name, description, price, stock);
+            }
+            
+            if (success) {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('productModal'));
+                modal.hide();
+                loadProducts();
+            } else {
+                alert('Erro ao salvar produto');
+            }
+        });
+    });
+</script>
+{{end}}

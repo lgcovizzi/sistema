@@ -62,8 +62,8 @@ func main() {
 	r.POST("/api/users", createUserProxy)
 	r.POST("/api/products", createProductProxy)
 
-	port := getEnv("SERVER_PORT", "3001")
-	log.Printf("Frontend Admin rodando na porta %s", port)
+	port := getEnv("SERVER_PORT", "3002")
+	log.Printf("Frontend Fundador rodando na porta %s", port)
 	r.Run(":" + port)
 }
 

@@ -1,0 +1,205 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Dashboard</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="mb-0" id="totalUsers">0</h4>
+                        <p class="mb-0">Total de Usuários</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-users fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="mb-0" id="totalProducts">0</h4>
+                        <p class="mb-0">Total de Produtos</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-box fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="mb-0" id="totalStock">0</h4>
+                        <p class="mb-0">Estoque Total</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-warehouse fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="mb-0">GraphQL</h4>
+                        <p class="mb-0">API Ativa</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-code fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Estatísticas do Sistema</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Usuários Recentes</h6>
+                        <div id="recentUsers" class="list-group list-group-flush">
+                            <div class="text-center py-3">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Carregando...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Produtos Recentes</h6>
+                        <div id="recentProducts" class="list-group list-group-flush">
+                            <div class="text-center py-3">
+                                <div class="spinner-border text-success" role="status">
+                                    <span class="visually-hidden">Carregando...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    // Função para buscar dados via GraphQL
+    async function fetchGraphQL(query) {
+        try {
+            const response = await axios.post('/query', {
+                query: query
+            });
+            return response.data;
+        } catch (error) {
+            console.error('Erro ao buscar dados:', error);
+            return null;
+        }
+    }
+
+    // Carregar estatísticas do dashboard
+    async function loadDashboardStats() {
+        // Buscar usuários
+        const usersQuery = `
+            query {
+                users {
+                    id
+                    name
+                    email
+                    createdAt
+                }
+            }
+        `;
+        
+        // Buscar produtos
+        const productsQuery = `
+            query {
+                products {
+                    id
+                    name
+                    price
+                    stock
+                    createdAt
+                }
+            }
+        `;
+        
+        const [usersData, productsData] = await Promise.all([
+            fetchGraphQL(usersQuery),
+            fetchGraphQL(productsQuery)
+        ]);
+        
+        if (usersData && usersData.data) {
+            const users = usersData.data.users || [];
+            document.getElementById('totalUsers').textContent = users.length;
+            
+            // Mostrar usuários recentes
+            const recentUsers = users.slice(-5).reverse();
+            const recentUsersHtml = recentUsers.map(user => `
+                <div class="list-group-item">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">${user.name}</h6>
+                        <small>${new Date(user.createdAt).toLocaleDateString()}</small>
+                    </div>
+                    <p class="mb-1">${user.email}</p>
+                </div>
+            `).join('');
+            
+            document.getElementById('recentUsers').innerHTML = recentUsersHtml || '<div class="text-center py-3 text-muted">Nenhum usuário encontrado</div>';
+        }
+        
+        if (productsData && productsData.data) {
+            const products = productsData.data.products || [];
+            document.getElementById('totalProducts').textContent = products.length;
+            
+            // Calcular estoque total
+            const totalStock = products.reduce((sum, product) => sum + product.stock, 0);
+            document.getElementById('totalStock').textContent = totalStock;
+            
+            // Mostrar produtos recentes
+            const recentProducts = products.slice(-5).reverse();
+            const recentProductsHtml = recentProducts.map(product => `
+                <div class="list-group-item">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">${product.name}</h6>
+                        <small>R$ ${product.price.toFixed(2)}</small>
+                    </div>
+                    <p class="mb-1">Estoque: ${product.stock}</p>
+                </div>
+            `).join('');
+            
+            document.getElementById('recentProducts').innerHTML = recentProductsHtml || '<div class="text-center py-3 text-muted">Nenhum produto encontrado</div>';
+        }
+    }
+    
+    // Carregar dados quando a página carregar
+    document.addEventListener('DOMContentLoaded', function() {
+        loadDashboardStats();
+        
+        // Atualizar dados a cada 30 segundos
+        setInterval(loadDashboardStats, 30000);
+    });
+</script>
+{{end}}

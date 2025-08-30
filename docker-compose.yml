@@ -17,11 +17,46 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - sistema_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sistema_user -d sistema_db"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Redis Cache Service
+  redis:
+    image: redis:7-alpine
+    container_name: sistema_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - sistema_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
 
   # Backend Service
   backend:
@@ -35,33 +70,145 @@ services:
       - DB_NAME=sistema_db
       - DB_USER=sistema_user
       - DB_PASSWORD=sistema_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - SERVER_PORT=8080
       - GIN_MODE=release
       - JWT_SECRET=your-super-secret-jwt-key-here
     ports:
       - "8080:8080"
+    volumes:
+      - backend_storage:/app/storage
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - sistema_network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # Frontend Service
-  frontend:
+  # Frontend Admin Service
+  frontend-admin:
     build:
       context: ./frontend-admin
       dockerfile: Dockerfile
-    container_name: sistema_frontend
+    container_name: sistema_frontend_admin
+    environment:
+      - BACKEND_URL=http://backend:8080
+      - SERVER_PORT=3001
+      - GIN_MODE=release
+      - FRONTEND_TYPE=admin
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+    networks:
+      - sistema_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Fundador Service
+  frontend-fundador:
+    build:
+      context: ./frontend-fundador
+      dockerfile: Dockerfile
+    container_name: sistema_frontend_fundador
+    environment:
+      - BACKEND_URL=http://backend:8080
+      - SERVER_PORT=3002
+      - GIN_MODE=release
+      - FRONTEND_TYPE=fundador
+    ports:
+      - "3002:3002"
+    depends_on:
+      - backend
+    networks:
+      - sistema_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Usuario Service
+  frontend-usuario:
+    build:
+      context: ./frontend-usuario
+      dockerfile: Dockerfile
+    container_name: sistema_frontend_usuario
+    environment:
+      - BACKEND_URL=http://backend:8080
+      - SERVER_PORT=3003
+      - GIN_MODE=release
+      - FRONTEND_TYPE=usuario
+    ports:
+      - "3003:3003"
+    depends_on:
+      - backend
+    networks:
+      - sistema_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Publico Service
+  frontend-publico:
+    build:
+      context: ./frontend-publico
+      dockerfile: Dockerfile
+    container_name: sistema_frontend_publico
     environment:
       - BACKEND_URL=http://backend:8080
       - SERVER_PORT=3000
       - GIN_MODE=release
+      - FRONTEND_TYPE=publico
     ports:
       - "3000:3000"
     depends_on:
@@ -69,11 +216,39 @@ services:
     networks:
       - sistema_network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Logs Service
+  logs:
+    image: fluent/fluent-bit:latest
+    container_name: sistema_logs
+    volumes:
+      - logs_data:/fluent-bit/log
+      - /var/log:/var/log:ro
+      - ./logs/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+    networks:
+      - sistema_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
   # Nginx Reverse Proxy
   nginx:
@@ -88,10 +263,21 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - backend
-      - frontend
+      - frontend-admin
+      - frontend-fundador
+      - frontend-usuario
+      - frontend-publico
     networks:
       - sistema_network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
@@ -109,3 +295,12 @@ networks:
 # Volumes
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_storage:
+    driver: local
+  uploads_data:
+    driver: local
+  logs_data:
+    driver: local
