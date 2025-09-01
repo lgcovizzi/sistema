@@ -1,0 +1,1 @@
+# App Core - APIs REST e GraphQL

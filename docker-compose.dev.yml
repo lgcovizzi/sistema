@@ -1,0 +1,224 @@
+version: '3.8'
+
+services:
+  postgres_test:
+    image: postgres:15-alpine
+    container_name: sistema-postgres-test
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sistema_test}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sistema_test}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - sistema_dev
+
+  redis_test:
+    image: redis:7-alpine
+    container_name: sistema-redis-test
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_test_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - sistema_dev
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: sistema-mailhog
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - sistema_dev
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sistema-backend-dev
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - SECRET_KEY=${DJANGO_SECRET_KEY:-dev-secret-key-change-in-production}
+      - POSTGRES_HOST=postgres_test
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-sistema_test}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS_HOST=redis_test
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis_test:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis_test:6379/0
+      - EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+      - EMAIL_HOST=mailhog
+      - EMAIL_PORT=1025
+      - EMAIL_USE_TLS=false
+      - EMAIL_USE_SSL=false
+    volumes:
+      - ./backend:/app
+      - ./data/static:/app/static
+      - ./data/media:/app/media
+      - ./data/backups:/app/backups
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres_test:
+        condition: service_healthy
+      redis_test:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python manage.py check --deploy"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    command: >
+      sh -c "
+        python manage.py makemigrations --noinput &&
+        python manage.py migrate --noinput &&
+        python manage.py collectstatic --noinput &&
+        python manage.py runserver 0.0.0.0:8000
+      "
+    networks:
+      - sistema_dev
+
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sistema-celery-dev
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - SECRET_KEY=${DJANGO_SECRET_KEY:-dev-secret-key-change-in-production}
+      - POSTGRES_HOST=postgres_test
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-sistema_test}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS_HOST=redis_test
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis_test:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis_test:6379/0
+    volumes:
+      - ./backend:/app
+      - ./data/backups:/app/backups
+    depends_on:
+      postgres_test:
+        condition: service_healthy
+      redis_test:
+        condition: service_healthy
+    command: celery -A core worker --loglevel=info --concurrency=2
+    networks:
+      - sistema_dev
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sistema-celery-beat-dev
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - SECRET_KEY=${DJANGO_SECRET_KEY:-dev-secret-key-change-in-production}
+      - POSTGRES_HOST=postgres_test
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-sistema_test}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS_HOST=redis_test
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis_test:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis_test:6379/0
+    volumes:
+      - ./backend:/app
+      - ./data/backups:/app/backups
+    depends_on:
+      postgres_test:
+        condition: service_healthy
+      redis_test:
+        condition: service_healthy
+    command: celery -A core beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    networks:
+      - sistema_dev
+
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sistema-flower-dev
+    environment:
+      - CELERY_BROKER_URL=redis://redis_test:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis_test:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis_test
+    command: celery -A core flower --port=5555 --broker=redis://redis_test:6379/0
+    networks:
+      - sistema_dev
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: sistema-nginx-dev
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+      - ./data/static:/var/www/static:ro
+      - ./data/media:/var/www/media:ro
+      - ./data/certbot/conf:/etc/letsencrypt:ro
+      - ./data/certbot/www:/var/www/certbot:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - sistema_dev
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: sistema-certbot-dev
+    volumes:
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+    command: >
+      sh -c "
+        if [ ! -f /etc/letsencrypt/live/localhost/fullchain.pem ]; then
+          echo 'Generating self-signed certificates for development...'
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /etc/letsencrypt/live/localhost/privkey.pem \
+            -out /etc/letsencrypt/live/localhost/fullchain.pem \
+            -subj '/CN=localhost'
+        fi
+        tail -f /dev/null
+      "
+    networks:
+      - sistema_dev
+
+volumes:
+  postgres_test_data:
+  redis_test_data:
+
+networks:
+  sistema_dev:
+    driver: bridge

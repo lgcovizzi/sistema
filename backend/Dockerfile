@@ -1,42 +1,19 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
+FROM python:3.9-slim
 
-# Install git for go modules
-RUN apk add --no-cache git
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
 WORKDIR /app
 
-# Copy go mod and sum files
-COPY go.mod go.sum ./
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set Go proxy to direct to avoid network issues
-ENV GOPROXY=direct
-ENV GOSUMDB=off
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
-# Download dependencies
-RUN go mod download
-
-# Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
-
-# Final stage
-FROM alpine:latest
-
-RUN apk --no-cache add ca-certificates tzdata
-
-WORKDIR /root/
-
-# Copy the binary from builder stage
-COPY --from=builder /app/main .
-
-# Copy .env file if exists
-COPY --from=builder /app/.env* ./
-
-# Expose port
-EXPOSE 8080
-
-# Command to run
-CMD ["./main"]
+# Make entrypoint script executable
+RUN chmod +x /app/entrypoint.sh

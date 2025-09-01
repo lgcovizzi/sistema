@@ -1,0 +1,34 @@
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@sistema.local'
+
+route:
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'web.hook'
+
+receivers:
+  - name: 'web.hook'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook'
+        send_resolved: true
+
+  - name: 'email'
+    email_configs:
+      - to: 'admin@sistema.local'
+        subject: 'Alerta do Sistema - {{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+        body: |
+          {{ range .Alerts }}
+          Alerta: {{ .Annotations.summary }}
+          Descrição: {{ .Annotations.description }}
+          Severidade: {{ .Labels.severity }}
+          {{ end }}
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'dev', 'instance']
